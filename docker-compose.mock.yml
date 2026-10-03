@@ -1,0 +1,27 @@
+# Runs the engine against the synthetic upstream instead of the live feed, with
+# a high tick rate, large batched payloads and fault injection:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build
+services:
+  mockfeed:
+    image: pricing-engine:latest
+    entrypoint: ["/usr/local/bin/mockfeed"]
+    command:
+      - -rate=20000        # ticks/s across all symbols
+      - -batch=2200        # ~250KB JSON array per message
+      - -dup=0.2
+      - -ooo=0.01
+      - -spike=0.0005
+      - -drop-every=45s    # abrupt upstream disconnects
+
+  pricing-engine:
+    depends_on: [mockfeed]
+    environment:
+      FEED_URL: ws://mockfeed:9000/ws/algo
+      API_KEY: mock
+      SECRET_KEY: mock
+    volumes:
+      - mock-data:/data    # keep synthetic prices out of the real state
+
+volumes:
+  mock-data:

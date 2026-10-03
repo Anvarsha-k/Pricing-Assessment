@@ -1,0 +1,10 @@
+# Credentials
+.env
+
+
+# Local state and build output
+/data/
+/bin/
+*.db
+*.test
+*.out

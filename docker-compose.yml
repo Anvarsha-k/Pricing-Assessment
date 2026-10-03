@@ -1,0 +1,31 @@
+services:
+  pricing-engine:
+    build: .
+    image: pricing-engine:latest
+    env_file:
+      - path: .env          # API_KEY / SECRET_KEY (see .env.example)
+        required: false
+    environment:
+      DATA_DIR: /data
+      LISTEN_ADDR: ":8080"
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - engine-data:/data   # rolling-window state survives container restarts
+    restart: unless-stopped
+    stop_grace_period: 15s  # time for the final state flush on SIGTERM
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+
+  # Optional: docker compose --profile monitoring up
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["monitoring"]
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on: [pricing-engine]
+
+volumes:
+  engine-data:

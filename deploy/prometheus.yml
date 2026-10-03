@@ -1,0 +1,6 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: pricing-engine
+    static_configs:
+      - targets: ["pricing-engine:8080"]

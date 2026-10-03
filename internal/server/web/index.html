@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing Engine</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6fed'/%3E%3Cpath d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+  // ?theme=light|dark wins (shareable links), then the saved choice, then the OS setting.
+  (() => {
+    let t = new URLSearchParams(location.search).get('theme');
+    if (t !== 'light' && t !== 'dark') { try { t = JSON.parse(localStorage.getItem('pe.theme')); } catch { t = null; } }
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  })();
+</script>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M7 21l6-6 4 4 8-9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Pricing Engine</span>
+    <span class="tag">LIVE</span>
+  </div>
+  <div class="pills">
+    <span class="pill" id="pill-socket" title="WebSocket connection to the engine"><i></i><b>Engine</b><span>connecting</span></span>
+    <span class="pill" id="pill-feed" title="Upstream market data session"><i></i><b>Feed</b><span>—</span></span>
+  </div>
+  <div class="hstats" title="Measured in this browser">
+    <div><label>Latency p50</label><span id="h-lat">—</span></div>
+    <div><label>Updates/s</label><span id="h-ups">—</span></div>
+    <div><label>Bandwidth</label><span id="h-bw">—</span></div>
+    <div><label>Bytes/update</label><span id="h-bpu">—</span></div>
+  </div>
+  <button id="theme" class="iconbtn" title="Toggle light/dark theme" aria-label="Toggle theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+</header>
+
+<div id="banner" class="banner" hidden>Upstream feed disconnected. Showing last known prices while the engine reconnects…</div>
+
+<main class="layout">
+  <section class="panel watch" aria-label="Watchlist">
+    <div class="watch-head">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" data-tab="all">All<span class="count"></span></button>
+        <button role="tab" data-tab="fx">FX<span class="count"></span></button>
+        <button role="tab" data-tab="metals">Metals<span class="count"></span></button>
+        <button role="tab" data-tab="crypto">Crypto<span class="count"></span></button>
+        <button role="tab" data-tab="fav">★ Watch<span class="count"></span></button>
+      </div>
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Search symbol" autocomplete="off" spellcheck="false">
+        <kbd>/</kbd>
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table class="wl">
+        <thead>
+          <tr>
+            <th class="c-star"></th>
+            <th data-sort="symbol">Symbol</th>
+            <th data-sort="bid" class="num">Sell</th>
+            <th data-sort="ask" class="num">Buy</th>
+            <th data-sort="spread" class="num hide-sm">Spread</th>
+            <th data-sort="chg" class="num">24h %</th>
+            <th class="hide-md">24h range</th>
+            <th class="hide-md">Last hour</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="wl-empty" class="empty">Waiting for prices…</div>
+    </div>
+    <div class="watch-foot"><span id="wl-foot">—</span><span class="hide-sm">↑ ↓ to navigate · / to search</span></div>
+  </section>
+
+  <section class="panel detail" aria-label="Instrument">
+    <div class="d-head">
+      <h2><span id="d-sym">—</span><span id="d-cat" class="tag"></span></h2>
+      <div class="d-age muted" id="d-age"></div>
+    </div>
+    <div class="quotes">
+      <div class="qbox sell" id="d-sellbox"><label>Sell</label><div class="big" id="d-bid">—</div></div>
+      <div class="spread"><label>Spread</label><div id="d-spread">—</div><span class="muted" id="d-spread-bps"></span></div>
+      <div class="qbox buy" id="d-buybox"><label>Buy</label><div class="big" id="d-ask">—</div></div>
+    </div>
+    <div class="dstats">
+      <div class="dstat"><label>24h change</label><span id="d-chg">—</span></div>
+      <div class="dstat"><label>24h low</label><span id="d-low">—</span></div>
+      <div class="dstat"><label>24h high</label><span id="d-high">—</span></div>
+      <div class="dstat">
+        <label>Position in 24h range</label>
+        <div class="range"><div class="fill" id="d-range-fill"></div><i id="d-range-mark"></i></div>
+        <div class="rl"><span id="d-rl-lo"></span><span id="d-rl-hi"></span></div>
+      </div>
+    </div>
+    <div class="chart-head">
+      <div class="seg" id="intervals">
+        <button data-iv="60000">1m</button>
+        <button data-iv="300000">5m</button>
+        <button data-iv="900000">15m</button>
+        <button data-iv="3600000">1h</button>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div id="chart-empty" class="empty">Collecting candles. The chart fills in as the 24h window builds up.</div>
+    </div>
+  </section>
+</main>
+
+<section class="health" aria-label="Engine health">
+  <div class="health-head">
+    <h3>Engine health</h3>
+    <span class="muted" id="m-updated">from /metrics</span>
+  </div>
+  <div class="cards">
+    <article class="card">
+      <div class="card-top"><h4>Upstream feed</h4><span id="m-feed-state" class="muted"></span></div>
+      <div class="hero" id="m-in-rate">—</div>
+      <svg class="trend" id="t-in" viewBox="0 0 100 34" preserveAspectRatio="none"><path class="area"/><path class="line"/></svg>
+      <dl class="kv">
+        <dt>Inbound</dt><dd id="m-in-kb">—</dd>
+        <dt>Avg message</dt><dd id="m-in-msg">—</dd>
+        <dt>Decode / message</dt><dd id="m-decode">—</dd>
+        <dt>Reconnects</dt><dd id="m-reconn">—</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <div class="card-top"><h4>Engine</h4><span class="muted">ticks / s</span></div>
+      <div class="hero" id="m-ticks">—</div>
+      <svg class="trend" id="t-ticks" viewBox="0 0 100 34" preserveAspectRatio="none"><path class="area"/><path class="line"/></svg>
+      <dl class="kv">
+        <dt>Time per tick</dt><dd id="m-tick-ns">—</dd>
+        <dt>Duplicates dropped</dt><dd id="m-dup">—</dd>
+        <dt>Late / spikes / invalid</dt><dd id="m-rej">—</dd>
+        <dt>State flush</dt><dd id="m-flush">—</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <div class="card-top"><h4>Distribution</h4><span class="muted">frames / s</span></div>
+      <div class="hero" id="m-frames">—</div>
+      <svg class="trend" id="t-frames" viewBox="0 0 100 34" preserveAspectRatio="none"><path class="area"/><path class="line"/></svg>
+      <dl class="kv">
+        <dt>Clients</dt><dd id="m-clients">—</dd>
+        <dt>Outbound</dt><dd id="m-out-kb">—</dd>
+        <dt>Avg frame</dt><dd id="m-frame">—</dd>
+        <dt>Per-client payload vs input</dt><dd id="m-ratio">—</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <div class="card-top"><h4>End-to-end latency</h4><span class="muted">server, p50</span></div>
+      <div class="hero" id="m-p50">—</div>
+      <svg class="trend" id="t-lat" viewBox="0 0 100 34" preserveAspectRatio="none"><path class="area"/><path class="line"/></svg>
+      <dl class="kv">
+        <dt>p90 / p99</dt><dd id="m-p99">—</dd>
+        <dt>Within 50 ms budget</dt><dd id="m-budget">—</dd>
+        <dt>This browser, p50</dt><dd id="m-client-lat">—</dd>
+        <dt>Price basis</dt><dd id="m-basis">—</dd>
+      </dl>
+    </article>
+  </div>
+</section>
+
+<footer>
+  <span>Buy/sell, 24h high/low and 24h change are computed by the engine. The upstream statistics are ignored.</span>
+  <nav>
+    <a href="/api/snapshot" target="_blank" rel="noopener">Snapshot API</a>
+    <a href="/metrics" target="_blank" rel="noopener">Metrics</a>
+  </nav>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
